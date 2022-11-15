@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+COMMIT_MSG_TEXT=`cat $1 | sed '/^#/d'`
+COMMIT_MSG_TEXT_WITHOUT_EMPTY_LINE=`echo "$COMMIT_MSG_TEXT"| sed -r '/^\s*$/d'`
+SUBJECT_LINE=`echo "$COMMIT_MSG_TEXT_WITHOUT_EMPTY_LINE" | head -n 1`
+ISSUE_LINE=`echo "$COMMIT_MSG_TEXT_WITHOUT_EMPTY_LINE" | tail -n 1`
+BODY_LINES=`echo "$COMMIT_MSG_TEXT_WITHOUT_EMPTY_LINE" | head -n -1 | tail -n +2`
+ERROR_MESSAGE=''
+MAIN_ERROR_MESSAGE="Style of commit message is not corresponding to approved format\n
+Please visit the page: https://www.conventionalcommits.org/en/v1.0.0/\n\n
+==========\n\n"
+
+# Skip check if it revert or merge commit
+if [[ "${COMMIT_MSG_TEXT}" = "Merge branch "* ]] || [[ "${COMMIT_MSG_TEXT}" = "Revert "* ]]; then
+    exit 0
+fi
+
+if [ $(echo "$COMMIT_MSG_TEXT_WITHOUT_EMPTY_LINE" | wc -l) -lt 3 ]; then
+    ERROR_MESSAGE+="Message is missing one of the following: Subject, Body or Issue line\n\n"
+fi
+
+# ==== Subject check ==== START
+if ! [ -z "$(echo "${COMMIT_MSG_TEXT}" | sed -n 2p)" ]; then
+    ERROR_MESSAGE+='Between subject line and body should be 1 newline\n\n'
+fi
+
+if [ "${#SUBJECT_LINE}" -gt 60 ]; then
+    ERROR_MESSAGE+='Subject have more than 60 character\n\n'
+fi
+
+echo "${SUBJECT_LINE}" | grep -P "^(?:(?:[^\]\[\n\r]+(?<! )): )?[^\]\[@#$%:]+[^.]$" > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    ERROR_MESSAGE+="Subject not match one of the following rules:\n
+- Optional tag prefix format 'tag: ' or 'Tag: '\n
+- Capitalize first letter in title\n
+- Don't put a period at the end\n\n"
+fi
+# ==== Subject check ==== END
+
+# ==== Body check ==== START
+readarray -t body_array <<< "$BODY_LINES"
+
+for index in "${!body_array[@]}"; do
+    if [ "$(echo -n ${body_array[$index]} | wc -c)" -gt 72 ]; then
+        ERROR_MESSAGE+="Body line #$((index + 3)) have more than 72 character\n"
+    fi
+done
+# ==== Body check ==== END
+
+# ==== Issue line check ==== START
+echo "${ISSUE_LINE}" | grep -P "^Issue: .*" > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    ERROR_MESSAGE+="Issue line should starts with 'Issue: ' word or issue line is missing\n\n"
+fi
+
+echo "${ISSUE_LINE}" | grep -P "[A-Z]+-\d+" > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    ERROR_MESSAGE+="The issue line does not contain a link to the issue according to the format, like a 'XXXX-1111'\n\n"
+fi
+
+if [ -n "$(echo "${COMMIT_MSG_TEXT}" | tail -n 2 | head -n 1)" ]; then
+    ERROR_MESSAGE+='Between body and issue line should be 1 newline\n'
+fi
+
+ISSUES_COUNTER=$(echo "${ISSUE_LINE}" | grep -oP "[A-Z]+-\d+" | wc -l)
+if [ "${ISSUES_COUNTER}" -gt 1 ]; then
+    if [ "${ISSUES_COUNTER}" -ne $(echo "${ISSUE_LINE}" | grep -oP "(?:^.*?[A-Z]+-\d+)|(?:,[^a-zA-Z0-9_,]?+[A-Z]+-\d+)" | wc -l) ]; then
+        ERROR_MESSAGE+="List of Jira issues should be separated by ','\n\n"
+    fi
+fi
+
+# ==== Issue line check ==== END
+
+if [ -n "${ERROR_MESSAGE}" ]; then
+    echo -e "${MAIN_ERROR_MESSAGE}${ERROR_MESSAGE}"
+    echo -e "\noriginal message:\n"
+    echo -e "${COMMIT_MSG_TEXT}"
+    exit 1
+fi
+
+exit 0
