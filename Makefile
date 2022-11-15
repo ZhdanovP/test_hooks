@@ -1,6 +1,6 @@
 .PHONY: deploy_hooks
 deploy_hooks:
-	chmod ug+x hooks/deploy_hooks.sh
+	chmod +x hooks/deploy_hooks.sh
 	./hooks/deploy_hooks.sh
 
 .PHONY: run
